@@ -50,35 +50,45 @@ class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
   }
 }
 
-// Custom plugin to render an audio player for responses containing audioOutput
+// Custom plugin to render an audio player for components containing audioInput or audioOutput
 const AudioPlaybackPlugin = () => {
+  const AudioPlayer = ({ base64, label }: { base64: string; label: string }) => (
+    <div className="mt-4 p-4 bg-indigo-50 rounded-lg border border-indigo-100">
+      <div className="flex items-center gap-2 mb-2">
+        <Volume2 className="w-4 h-4 text-indigo-600" />
+        <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">{label}</span>
+      </div>
+      <audio controls src={`data:audio/wav;base64,${base64}`} className="w-full h-10" />
+    </div>
+  );
+
+  const wrapWithAudio = (Original: any, type: 'Input' | 'Output') => (props: any) => {
+    const { content, contentType } = props;
+    if (contentType === 'application/json' && content) {
+      try {
+        const data = JSON.parse(content);
+        const audioKey = type === 'Input' ? 'audioInput' : 'audioOutput';
+        const label = type === 'Input' ? 'Audio Input Playback' : 'Audio Translation Playback';
+        
+        if (data[audioKey] && typeof data[audioKey] === 'string' && data[audioKey].length > 10) {
+          return (
+            <div className="swagger-ui-audio-wrapper">
+              <Original {...props} />
+              <AudioPlayer base64={data[audioKey]} label={label} />
+            </div>
+          );
+        }
+      } catch (e) {
+        // Ignore parsing errors
+      }
+    }
+    return <Original {...props} />;
+  };
+
   return {
     wrapComponents: {
-      ResponseBody: (Original: any) => (props: any) => {
-        const { content, contentType } = props;
-        if (contentType === 'application/json' && content) {
-          try {
-            const data = JSON.parse(content);
-            if (data.audioOutput && typeof data.audioOutput === 'string') {
-              return (
-                <div className="swagger-ui-audio-wrapper">
-                  <Original {...props} />
-                  <div className="mt-4 p-4 bg-indigo-50 rounded-lg border border-indigo-100">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Volume2 className="w-4 h-4 text-indigo-600" />
-                      <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider">Audio Translation Playback</span>
-                    </div>
-                    <audio controls src={`data:audio/wav;base64,${data.audioOutput}`} className="w-full h-10" />
-                  </div>
-                </div>
-              );
-            }
-          } catch (e) {
-            // Ignore parsing errors
-          }
-        }
-        return <Original {...props} />;
-      }
+      ResponseBody: (Original: any) => wrapWithAudio(Original, 'Output'),
+      RequestBody: (Original: any) => wrapWithAudio(Original, 'Input')
     }
   };
 };

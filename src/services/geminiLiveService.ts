@@ -7,6 +7,7 @@ export interface LiveAPIConfig {
   videoMode?: 'camera' | 'screen';
   onTranscription?: (text: string, isInterim: boolean) => void;
   onModelAudio?: (base64Audio: string) => void;
+  onVolumeChange?: (inputVolume: number, outputVolume: number) => void;
   onInterrupted?: () => void;
   onOpen?: () => void;
   onClose?: () => void;
@@ -24,6 +25,10 @@ export class GeminiLiveService {
   private audioQueue: Int16Array[] = [];
   private isPlaying = false;
   private nextPlayTime = 0;
+  private micAnalyser: AnalyserNode | null = null;
+  private speakerAnalyser: AnalyserNode | null = null;
+  private volumeCallback: ((inputVolume: number, outputVolume: number) => void) | null = null;
+  private animationFrame: number | null = null;
 
   constructor(apiKey: string) {
     this.ai = new GoogleGenAI({ apiKey });
@@ -36,6 +41,19 @@ export class GeminiLiveService {
 
     this.audioContext = new AudioContext({ sampleRate: 24000 });
     
+    // Mic Analyser
+    this.micAnalyser = this.audioContext.createAnalyser();
+    this.micAnalyser.fftSize = 256;
+    
+    // Speaker Analyser
+    this.speakerAnalyser = this.audioContext.createAnalyser();
+    this.speakerAnalyser.fftSize = 256;
+    this.speakerAnalyser.connect(this.audioContext.destination);
+
+    this.volumeCallback = config.onVolumeChange || null;
+    
+    this.startVolumeAnalysis();
+
     const sessionPromise = this.ai.live.connect({
       model: config.model,
       callbacks: {
@@ -130,14 +148,65 @@ export class GeminiLiveService {
     this.session = await sessionPromise;
   }
 
+  private startVolumeAnalysis() {
+    if (!this.micAnalyser || !this.speakerAnalyser || !this.volumeCallback) return;
+
+    const micData = new Uint8Array(this.micAnalyser.frequencyBinCount);
+    const speakerData = new Uint8Array(this.speakerAnalyser.frequencyBinCount);
+    
+    const analyze = () => {
+      if (!this.micAnalyser || !this.speakerAnalyser || !this.volumeCallback) return;
+      
+      this.micAnalyser.getByteFrequencyData(micData);
+      this.speakerAnalyser.getByteFrequencyData(speakerData);
+
+      const getAverage = (data: Uint8Array) => {
+        let sum = 0;
+        for (let i = 0; i < data.length; i++) sum += data[i];
+        return sum / data.length;
+      };
+
+      const micAvg = getAverage(micData);
+      const speakerAvg = getAverage(speakerData);
+
+      const normalizedMic = Math.min(1, micAvg / 128);
+      const normalizedSpeaker = Math.min(1, speakerAvg / 128);
+      
+      this.volumeCallback(normalizedMic, normalizedSpeaker);
+      
+      this.animationFrame = requestAnimationFrame(analyze);
+    };
+
+    this.animationFrame = requestAnimationFrame(analyze);
+  }
+
+  async sendText(text: string) {
+    if (this.session) {
+      this.session.sendRealtimeInput({
+        text: text
+      });
+    }
+  }
+
   private async startMicStreaming() {
     try {
-      this.micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const source = this.audioContext!.createMediaStreamSource(this.micStream);
+      this.micStream = await navigator.mediaDevices.getUserMedia({ 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true
+        } 
+      });
       
       // Use 16kHz for input as per Python script
       const inputContext = new AudioContext({ sampleRate: 16000 });
       const inputSource = inputContext.createMediaStreamSource(this.micStream);
+      
+      // Connect mic to mic analyser for visualization
+      if (this.audioContext && this.micAnalyser) {
+        const micSource = this.audioContext.createMediaStreamSource(this.micStream);
+        micSource.connect(this.micAnalyser);
+      }
       
       this.processor = inputContext.createScriptProcessor(2048, 1, 1);
       
@@ -186,7 +255,13 @@ export class GeminiLiveService {
       
       const source = this.audioContext.createBufferSource();
       source.buffer = buffer;
-      source.connect(this.audioContext.destination);
+      
+      // Connect to speaker analyser for visualization
+      if (this.speakerAnalyser) {
+        source.connect(this.speakerAnalyser);
+      } else {
+        source.connect(this.audioContext.destination);
+      }
       
       const startTime = Math.max(this.audioContext.currentTime, this.nextPlayTime);
       source.start(startTime);
@@ -208,6 +283,10 @@ export class GeminiLiveService {
   }
 
   async disconnect() {
+    if (this.animationFrame) {
+      cancelAnimationFrame(this.animationFrame);
+      this.animationFrame = null;
+    }
     if (this.session) {
       this.session.close();
       this.session = null;

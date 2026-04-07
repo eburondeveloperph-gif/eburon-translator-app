@@ -8,6 +8,7 @@ import { Mic, MicOff, Languages, Volume2, Settings, Info, Loader2, Globe, Sparkl
 import { motion, AnimatePresence } from 'motion/react';
 import { Link } from 'react-router-dom';
 import { GeminiLiveService } from '../services/geminiLiveService';
+import { dbService, TranslationRecord } from '../services/dbService';
 
 const LANGUAGES = [
   { label: 'Dutch Flemish', value: 'Dutch Flemish' },
@@ -270,7 +271,7 @@ Your job is to do four things for every input:
 1. Accurately distinguish between different speakers in the audio (e.g., Speaker A, Speaker B).
 2. Accurately detect the true source language of each speaker.
 3. Reconstruct the original spoken content into a clean, properly written version in the source language for each speaker.
-4. Translate that meaning into the user-selected target language while preserving the speaker’s emotional tone, intent, rhythm, and human nuance.
+4. Translate that meaning into the target language: ${targetLang}.
 
 You are not a chatbot.
 You are not a general assistant.
@@ -279,6 +280,11 @@ You do not summarize.
 You do not moralize.
 You do not add commentary.
 You only detect, reconstruct, and translate.
+
+CRITICAL: TARGET LANGUAGE
+The user has selected ${targetLang} as the target language.
+You MUST translate all speech into ${targetLang}.
+Ensure the TARGET_LANGUAGE field in your output is exactly "${targetLang}".
 
 CRITICAL: NEUTRALITY AND FIDELITY
 - You are a neutral conduit. 
@@ -314,9 +320,7 @@ CLEANED_SOURCE_TEXT: <properly written original speech in the source language>
 TARGET_LANGUAGE: <selected target language>
 TRANSLATION: <emotionally faithful translation in the target language>
 
-Nothing else.
-Once the user speaks wait until it pauses then translate and read aloud into the users selected language.
-This time translate in ${targetLang} language.`;
+Nothing else.`;
 
 interface TranslationResult {
   speaker: string;
@@ -331,7 +335,7 @@ const TranslationItem = ({ item }: { item: TranslationResult }) => {
   const [copied, setCopied] = useState(false);
 
   const handleCopy = () => {
-    const text = `Speaker: ${item.speaker}\nSource (${item.sourceLanguage}): ${item.cleanedSourceText}\nTranslation (${item.targetLanguage}): ${item.translation}`;
+    const text = `${item.cleanedSourceText}\n${item.translation}`;
     navigator.clipboard.writeText(text);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
@@ -339,52 +343,38 @@ const TranslationItem = ({ item }: { item: TranslationResult }) => {
 
   return (
     <motion.div
-      initial={{ opacity: 0, x: -20 }}
-      animate={{ opacity: 1, x: 0 }}
-      className="group relative"
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
+      className="group relative py-4 border-b border-white/5 last:border-0"
     >
-      <div className="flex gap-4">
-        <div className={`flex-shrink-0 w-10 h-10 rounded-full border flex items-center justify-center ${
-          item.speaker.includes('A') ? 'bg-indigo-500/10 border-indigo-500/20 text-indigo-400' : 
-          item.speaker.includes('B') ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' :
-          'bg-purple-500/10 border-purple-500/20 text-purple-400'
-        }`}>
-          <span className="text-[10px] font-bold uppercase">{item.speaker.slice(-1)}</span>
-        </div>
-        <div className="flex-1 space-y-3">
+      <div className="flex flex-col gap-2">
+        <div className="flex items-center justify-between">
+          <span className={`text-[10px] font-bold uppercase tracking-widest ${
+            item.speaker.includes('A') ? 'text-indigo-400' : 
+            item.speaker.includes('B') ? 'text-emerald-400' :
+            'text-purple-400'
+          }`}>
+            {item.speaker}
+          </span>
           <div className="flex items-center gap-2">
-            <span className={`text-xs font-bold uppercase tracking-wider ${
-              item.speaker.includes('A') ? 'text-indigo-400' : 
-              item.speaker.includes('B') ? 'text-emerald-400' :
-              'text-purple-400'
-            }`}>{item.speaker}</span>
-            <span className="text-zinc-600">•</span>
-            <span className="text-xs font-bold text-zinc-500 uppercase tracking-wider">{item.sourceLanguage}</span>
-            <div className="h-px flex-1 bg-white/5" />
-            <span className="text-[10px] text-zinc-600 font-mono">{item.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+            <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">
+              {item.sourceLanguage} → {item.targetLanguage}
+            </span>
             <button 
               onClick={handleCopy}
-              className="p-1.5 rounded-md hover:bg-white/5 text-zinc-500 hover:text-zinc-300 transition-all opacity-0 group-hover:opacity-100"
+              className="p-1 rounded hover:bg-white/5 text-zinc-600 hover:text-zinc-400 transition-all opacity-0 group-hover:opacity-100"
             >
-              {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+              {copied ? <Check className="w-3 h-3 text-green-500" /> : <Copy className="w-3 h-3" />}
             </button>
           </div>
-          <div className="space-y-1">
-            <span className="text-[10px] font-bold text-zinc-600 uppercase tracking-widest">Transcription</span>
-            <p className="text-lg text-zinc-300 leading-relaxed font-medium">
-              {item.cleanedSourceText}
-            </p>
-          </div>
-          
-          <div className="pl-4 border-l-2 border-indigo-500/30 py-1">
-            <div className="flex items-center gap-2 mb-1">
-              <Volume2 className="w-3 h-3 text-indigo-400" />
-              <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider">{item.targetLanguage} Translation</span>
-            </div>
-            <p className="text-xl text-white font-semibold leading-relaxed">
-              {item.translation}
-            </p>
-          </div>
+        </div>
+        <div className="space-y-1">
+          <p className="text-lg text-zinc-300 leading-relaxed font-medium">
+            {item.cleanedSourceText}
+          </p>
+          <p className="text-xl text-white font-semibold leading-relaxed">
+            {item.translation}
+          </p>
         </div>
       </div>
     </motion.div>
@@ -411,21 +401,43 @@ export default function Home() {
     }
   };
   const [isConnecting, setIsConnecting] = useState(false);
+  const [micVolume, setMicVolume] = useState(0);
+  const [speakerVolume, setSpeakerVolume] = useState(0);
   const [history, setHistory] = useState<TranslationResult[]>([]);
   const [currentTranslation, setCurrentTranslation] = useState<TranslationResult | null>(null);
-  const [targetLanguage, setTargetLanguage] = useState('Filipino/Tagalog');
+  const [targetLanguage, setTargetLanguage] = useState('Filipino');
   const [videoMode, setVideoMode] = useState<'none' | 'camera' | 'screen'>('none');
   
+  const [liveText, setLiveText] = useState("");
+  const [inputText, setInputText] = useState("");
   const liveServiceRef = useRef<GeminiLiveService | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-    }
-  }, [history, currentTranslation]);
+    // Load history from localdb
+    const loadHistory = async () => {
+      try {
+        const records = await dbService.getAllTranslations();
+        const mapped: TranslationResult[] = records.map(r => ({
+          ...r,
+          timestamp: new Date(r.timestamp)
+        }));
+        setHistory(mapped);
+      } catch (err) {
+        console.error("Failed to load history from localdb:", err);
+      }
+    };
+    loadHistory();
+  }, []);
 
-  const [liveText, setLiveText] = useState("");
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTo({
+        top: scrollRef.current.scrollHeight,
+        behavior: 'smooth'
+      });
+    }
+  }, [history, currentTranslation, liveText]);
 
   const parseModelOutput = (text: string) => {
     const lines = text.split('\n');
@@ -504,6 +516,17 @@ export default function Home() {
                   translation: parsed.translation,
                   timestamp: new Date()
                 };
+                
+                // Save to localdb
+                dbService.saveTranslation({
+                  speaker: finalResult.speaker,
+                  sourceLanguage: finalResult.sourceLanguage,
+                  cleanedSourceText: finalResult.cleanedSourceText,
+                  targetLanguage: finalResult.targetLanguage,
+                  translation: finalResult.translation,
+                  timestamp: finalResult.timestamp.getTime()
+                }).catch(err => console.error("Failed to save to localdb:", err));
+
                 setHistory(prev => [...prev, finalResult]);
               }
             }
@@ -511,6 +534,10 @@ export default function Home() {
             setLiveText("");
             setCurrentTranslation(null);
           }
+        },
+        onVolumeChange: (mic, speaker) => {
+          setMicVolume(mic);
+          setSpeakerVolume(speaker);
         },
         onOpen: () => {
           setIsConnecting(false);
@@ -534,6 +561,26 @@ export default function Home() {
     } else {
       await startSession();
     }
+  };
+
+  const handleManualTranslate = async () => {
+    if (!inputText.trim() || isConnecting) return;
+    
+    if (!isActive) {
+      await startSession();
+    }
+    
+    // Wait for connection if we just started
+    const checkActive = setInterval(async () => {
+      if (isActive && liveServiceRef.current) {
+        clearInterval(checkActive);
+        await liveServiceRef.current.sendText(inputText);
+        setInputText("");
+      }
+    }, 100);
+
+    // Timeout after 5 seconds
+    setTimeout(() => clearInterval(checkActive), 5000);
   };
 
   return (
@@ -599,7 +646,10 @@ export default function Home() {
             </div>
 
             <button 
-              onClick={() => setHistory([])}
+              onClick={async () => {
+                await dbService.clearAll();
+                setHistory([]);
+              }}
               className="p-2 rounded-full hover:bg-white/5 text-zinc-400 transition-colors"
               title="Clear History"
             >
@@ -644,7 +694,7 @@ export default function Home() {
                   </div>
                   <h2 className="text-xl font-medium">Ready to Translate</h2>
                   <p className="text-sm max-w-xs mx-auto">
-                    Press the microphone button to start real-time speech reconstruction and translation.
+                    Press the microphone button or type below to start real-time speech reconstruction and translation.
                   </p>
                 </motion.div>
               )}
@@ -655,65 +705,144 @@ export default function Home() {
                 </div>
               ))}
 
-              {currentTranslation && (
-                <div className="opacity-60 grayscale-[0.5] relative">
-                  <div className="absolute -top-4 left-14 flex items-center gap-1.5">
+              {(currentTranslation || liveText) && (
+                <motion.div 
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  className="relative p-6 rounded-2xl bg-indigo-500/5 border border-indigo-500/10 shadow-inner"
+                >
+                  <div className="absolute -top-3 left-6 px-2 py-1 bg-[#0a0a0c] border border-indigo-500/20 rounded-md flex items-center gap-2">
                     <div className="w-1.5 h-1.5 rounded-full bg-indigo-500 animate-pulse" />
-                    <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Live Output</span>
+                    <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Live Console</span>
                   </div>
-                  <TranslationItem item={currentTranslation} />
-                </div>
+                  
+                  {currentTranslation ? (
+                    <div className="space-y-4">
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Transcription</span>
+                        <p className="text-lg text-zinc-300 font-medium leading-relaxed">
+                          {currentTranslation.cleanedSourceText}
+                        </p>
+                      </div>
+                      <div className="h-px bg-white/5" />
+                      <div className="space-y-1">
+                        <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">{targetLanguage} Translation</span>
+                        <p className="text-xl text-white font-semibold leading-relaxed">
+                          {currentTranslation.translation}
+                        </p>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 py-2">
+                      <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
+                      <p className="text-sm text-zinc-500 italic">
+                        {liveText || "Listening for speech..."}
+                      </p>
+                    </div>
+                  )}
+                </motion.div>
               )}
             </AnimatePresence>
           </div>
         </div>
 
-        {/* Controls */}
-        <div className="fixed bottom-0 left-0 right-0 p-8 bg-gradient-to-t from-[#0a0a0c] via-[#0a0a0c] to-transparent pointer-events-none">
-          <div className="max-w-5xl mx-auto flex flex-col items-center gap-6 pointer-events-auto">
+        {/* Sticky Bottom Navbar */}
+        <div className="fixed bottom-0 left-0 right-0 z-50 bg-gradient-to-t from-[#0a0a0c] via-[#0a0a0c] to-transparent pt-12 pb-8 px-6 pointer-events-none">
+          <div className="max-w-3xl mx-auto flex flex-col items-center gap-6 pointer-events-auto">
+            
             {isActive && (
               <motion.div 
-                initial={{ opacity: 0, scale: 0.9 }}
-                animate={{ opacity: 1, scale: 1 }}
-                className="flex items-center gap-3 px-4 py-2 rounded-full bg-indigo-500/10 border border-indigo-500/20"
+                initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                className="flex items-center gap-4 px-5 py-2.5 rounded-full bg-[#121214]/80 border border-white/10 backdrop-blur-xl shadow-2xl"
               >
-                <div className="flex gap-1">
-                  {[1, 2, 3, 4].map(i => (
-                    <motion.div
-                      key={i}
-                      animate={{ height: [4, 12, 4] }}
-                      transition={{ repeat: Infinity, duration: 0.6, delay: i * 0.1 }}
-                      className="w-1 bg-indigo-400 rounded-full"
-                    />
-                  ))}
+                <div className="flex items-center gap-3">
+                  <div className="flex gap-1 items-center h-4">
+                    {[1, 2, 3, 4].map(i => (
+                      <motion.div
+                        key={i}
+                        animate={{ 
+                          height: [4, Math.max(4, micVolume * 20 * (0.5 + Math.random() * 0.5)), 4] 
+                        }}
+                        transition={{ repeat: Infinity, duration: 0.2, delay: i * 0.05 }}
+                        className="w-1 bg-indigo-400 rounded-full"
+                      />
+                    ))}
+                  </div>
+                  <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">Mic</span>
                 </div>
-                <span className="text-xs font-bold text-indigo-400 uppercase tracking-widest">Listening...</span>
+
+                <div className="w-px h-4 bg-white/10" />
+
+                <div className="flex items-center gap-3">
+                  <span className="text-[10px] font-bold text-emerald-400 uppercase tracking-widest">Speaker</span>
+                  <div className="flex gap-1 items-center h-4">
+                    {[1, 2, 3, 4].map(i => (
+                      <motion.div
+                        key={i}
+                        animate={{ 
+                          height: [4, Math.max(4, speakerVolume * 20 * (0.5 + Math.random() * 0.5)), 4] 
+                        }}
+                        transition={{ repeat: Infinity, duration: 0.2, delay: i * 0.05 }}
+                        className="w-1 bg-emerald-400 rounded-full"
+                      />
+                    ))}
+                  </div>
+                </div>
               </motion.div>
             )}
 
-            <div className="relative group">
-              <div className={`absolute -inset-4 rounded-full blur-2xl transition-all duration-500 opacity-0 group-hover:opacity-100 ${isActive ? 'bg-red-500/20 opacity-100' : 'bg-indigo-500/20'}`} />
-              <button
-                onClick={handleToggle}
-                disabled={isConnecting}
-                className={`relative w-20 h-20 rounded-full flex items-center justify-center transition-all duration-300 shadow-2xl ${
-                  isActive 
-                    ? 'bg-red-500 text-white hover:bg-red-600 scale-110' 
-                    : 'bg-white text-black hover:scale-105 active:scale-95'
-                } ${isConnecting ? 'opacity-50 cursor-not-allowed' : ''}`}
-              >
-                {isConnecting ? (
-                  <Loader2 className="w-8 h-8 animate-spin" />
-                ) : isActive ? (
-                  <MicOff className="w-8 h-8" />
-                ) : (
-                  <Mic className="w-8 h-8" />
-                )}
-              </button>
+            {/* Text Input & Mic Field */}
+            <div className="w-full relative group">
+              <div className="absolute -top-6 left-0 flex items-center gap-2">
+                <span className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest">Active Target:</span>
+                <span className="text-[10px] font-bold text-indigo-400 uppercase tracking-widest">{targetLanguage}</span>
+              </div>
+              <div className="absolute -inset-0.5 bg-gradient-to-r from-indigo-500 to-purple-600 rounded-2xl blur opacity-20 group-focus-within:opacity-40 transition duration-1000"></div>
+              <div className="relative flex items-center bg-[#121214] border border-white/10 rounded-2xl overflow-hidden shadow-2xl">
+                <input 
+                  type="text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleManualTranslate();
+                  }}
+                  placeholder="Type to translate or speak..."
+                  className="flex-1 bg-transparent px-6 py-4 text-sm focus:outline-none placeholder:text-zinc-600 text-zinc-200"
+                />
+                <div className="flex items-center gap-2 pr-4">
+                  {inputText && (
+                    <button 
+                      onClick={() => setInputText("")}
+                      className="p-1.5 rounded-full hover:bg-white/5 text-zinc-500 transition-colors"
+                    >
+                      <X className="w-4 h-4" />
+                    </button>
+                  )}
+                  <div className="w-px h-6 bg-white/10 mx-1" />
+                  <button
+                    onClick={handleToggle}
+                    disabled={isConnecting}
+                    className={`p-2.5 rounded-xl transition-all duration-300 ${
+                      isActive 
+                        ? 'bg-red-500 text-white shadow-lg shadow-red-500/20' 
+                        : 'bg-indigo-500 text-white hover:bg-indigo-600 shadow-lg shadow-indigo-500/20'
+                    }`}
+                  >
+                    {isConnecting ? (
+                      <Loader2 className="w-5 h-5 animate-spin" />
+                    ) : isActive ? (
+                      <MicOff className="w-5 h-5" />
+                    ) : (
+                      <Mic className="w-5 h-5" />
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
             
-            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.2em]">
-              {isActive ? 'Click to stop' : 'Click to start translating'}
+            <p className="text-[10px] font-bold text-zinc-500 uppercase tracking-[0.2em] opacity-50">
+              {isActive ? 'Live Session Active' : 'Ready to reconstruct speech'}
             </p>
           </div>
         </div>
