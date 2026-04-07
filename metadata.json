@@ -1,0 +1,8 @@
+{
+  "name": "Remix: Eburon Translator",
+  "description": "Real-time speech reconstruction and translation engine with speaker diarization and OpenAPI documentation.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone"
+  ]
+}
