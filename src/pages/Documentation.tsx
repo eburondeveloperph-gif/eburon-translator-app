@@ -117,7 +117,7 @@ export default function Documentation() {
           className="rounded-2xl overflow-hidden border border-zinc-200 shadow-xl"
         >
           <ErrorBoundary>
-            <SwaggerUI url="/openapi" plugins={[AudioPlaybackPlugin]} />
+            <SwaggerUI url={window.location.origin + "/api-docs/openapi.json"} plugins={[AudioPlaybackPlugin]} />
           </ErrorBoundary>
         </motion.div>
       </main>

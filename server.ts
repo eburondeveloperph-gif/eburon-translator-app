@@ -158,7 +158,8 @@ async function startServer() {
     }
   };
 
-  app.get("/openapi", (req, res) => {
+  app.get("/api-docs/openapi.json", (req, res) => {
+    console.log(`[API] Serving OpenAPI spec to ${req.headers["host"]}`);
     const protocol = req.headers["x-forwarded-proto"] || req.protocol;
     const host = req.headers["host"];
     const fullUrl = `${protocol}://${host}/api`;
