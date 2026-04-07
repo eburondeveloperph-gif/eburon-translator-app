@@ -159,7 +159,24 @@ async function startServer() {
   };
 
   app.get("/openapi", (req, res) => {
-    res.json(openApiSpec);
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+    const host = req.headers["host"];
+    const fullUrl = `${protocol}://${host}/api`;
+    
+    const dynamicSpec = {
+      ...openApiSpec,
+      servers: [
+        {
+          url: fullUrl,
+          description: "Current environment API server"
+        },
+        {
+          url: "/api",
+          description: "Relative path (Local)"
+        }
+      ]
+    };
+    res.json(dynamicSpec);
   });
 
   // API endpoints
